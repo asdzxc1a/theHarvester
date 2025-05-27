@@ -59,6 +59,55 @@ Endpoints are progressively being transitioned to JWT-based authentication where
         ```
     *   `422 Unprocessable Entity`: If form data is malformed (e.g., missing fields).
 
+### 2. Create User (Signup)
+
+*   **Endpoint:** `POST /api/v1/users/`
+*   **Description:** Creates a new user account. This is typically used for user registration or initial user setup.
+*   **Authentication:** None required for this endpoint.
+*   **Request Body (`application/json`):**
+    Based on the `UserCreate` schema.
+    ```json
+    {
+      "email": "newuser@example.com",
+      "password": "a_strong_password",
+      "full_name": "New User Name (Optional)"
+    }
+    ```
+*   **Success Response (201 Created):**
+    Based on the `User` schema (excluding `hashed_password`).
+    ```json
+    {
+      "id": 1,
+      "email": "newuser@example.com",
+      "full_name": "New User Name (Optional)",
+      "is_active": true,
+      "is_superuser": false,
+      "created_at": "YYYY-MM-DDTHH:MM:SS.ffffff+ZZ:ZZ", 
+      "updated_at": "YYYY-MM-DDTHH:MM:SS.ffffff+ZZ:ZZ"  
+    }
+    ```
+    *(Note: `created_at` and `updated_at` will be actual timestamp values)*
+*   **Error Responses:**
+    *   `400 Bad Request`: If the email is already registered.
+        ```json
+        {
+            "detail": "Email already registered"
+        }
+        ```
+    *   `422 Unprocessable Entity`: If the request body fails validation (e.g., invalid email format, missing required fields).
+        ```json
+        {
+          "detail": [
+            {
+              "loc": ["body", "email"],
+              "msg": "value is not a valid email address",
+              "type": "value_error.email"
+            }
+          ]
+        }
+        ```
+        *(Example shown is for an invalid email; other validation errors will have different `loc`, `msg`, and `type` values.)*
+
 ## Agency Endpoints
 
 Base URL: `/api/v1/agencies`

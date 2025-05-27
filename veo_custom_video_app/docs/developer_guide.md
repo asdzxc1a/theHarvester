@@ -186,6 +186,8 @@ To test the login functionality and JWT-protected endpoints, you first need a us
     ```
     The script will prompt for the user's email, password, superuser status, active status, and full name.
 
+    Alternatively, for programmatic user creation (e.g., during application setup or if an admin interface is built), new users can be created by making a `POST` request to the `/api/v1/users/` endpoint with the required user details (email, password, and optional full_name). This is the standard way for applications to allow user self-registration or for other services to create users. Refer to the API Documentation for details on the `/api/v1/users/` endpoint.
+
 ### How to Login (Obtain JWT)
 Clients authenticate by sending a POST request to the `/api/v1/auth/login` endpoint.
 *   **Request Type:** `application/x-www-form-urlencoded` (standard for OAuth2 password flow).

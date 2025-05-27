@@ -152,6 +152,51 @@ async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+# --- User Signup Endpoint ---
+@auth_router.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
+async def create_user_signup(
+    user_in: UserCreate, # Request body will be validated against UserCreate schema
+    db: Session = Depends(get_db)
+):
+    # --- Implementation logic will be added in the next plan step ---
+    # Placeholder for now:
+    # 1. Check if user with user_in.email already exists -> raise HTTPException 400
+    # 2. Hash user_in.password using auth_utils.get_password_hash()
+    # 1. Check if user with user_in.email already exists
+    db_user = db.query(db_models.User).filter(db_models.User.email == user_in.email).first()
+    if db_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # 2. Hash user_in.password
+    hashed_password = auth_utils.get_password_hash(user_in.password)
+    
+    # 3. Create db_models.User instance using explicit field assignment
+    db_user = db_models.User(
+        email=user_in.email,
+        full_name=user_in.full_name, # UserCreate inherits from UserBase which has full_name
+        hashed_password=hashed_password
+        # is_active and is_superuser will use defaults from the User model definition
+    )
+    
+    # 4. Add to session, commit, refresh
+    db.add(db_user)
+    try:
+        db.commit()
+    except IntegrityError: # Should be caught by the email check above, but good for race conditions / other constraints
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered (concurrently)" 
+        )
+    db.refresh(db_user)
+    
+    # 5. Return the created user object
+    return db_user
+
+
 # Dependency function for VeoService (remains the same)
 async def get_veo_service():
     return veo_service_instance

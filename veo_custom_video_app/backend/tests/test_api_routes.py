@@ -734,3 +734,77 @@ def test_delete_agency_cascades(client: TestClient):
     # 6. Verify video is deleted (due to cascade from vision)
     res_get_video = client.get(f"/api/v1/videos/{cas_video_id}")
     assert res_get_video.status_code == 404
+
+
+# --- User Signup Endpoint Tests (/api/v1/users/) ---
+# UserModel and Session are imported from previous tests
+from veo_custom_video_app.backend.auth.auth import verify_password # Ensure this is imported
+
+def test_signup_successful(client: TestClient, db_session: Session):
+    new_user_data = {
+        "email": "newuser@example.com",
+        "password": "strongpassword123",
+        "full_name": "New User Test"
+    }
+    response = client.post("/api/v1/users/", json=new_user_data) # Endpoint is on auth_router, prefixed with /api/v1
+    
+    assert response.status_code == 201
+    data = response.json()
+    assert data["email"] == new_user_data["email"]
+    assert data["full_name"] == new_user_data["full_name"]
+    assert "id" in data
+    assert data["is_active"] is True  # Default value
+    assert data["is_superuser"] is False # Default value
+    assert "hashed_password" not in data # Ensure password hash isn't returned
+    assert "created_at" in data
+    assert "updated_at" in data
+
+    # Verify user in database
+    db_user = db_session.query(UserModel).filter(UserModel.email == new_user_data["email"]).first()
+    assert db_user is not None
+    assert db_user.email == new_user_data["email"]
+    assert db_user.full_name == new_user_data["full_name"]
+    assert verify_password(new_user_data["password"], db_user.hashed_password) # Verify correct password was hashed
+    assert db_user.is_active is True
+    assert db_user.is_superuser is False
+
+def test_signup_existing_email(client: TestClient, db_session: Session):
+    existing_user_email = "existing_signup@example.com" # Use a unique email for this test
+    create_db_user(db_session, existing_user_email, "password123")
+
+    new_user_data_same_email = {
+        "email": existing_user_email,
+        "password": "anotherpassword",
+        "full_name": "Another User"
+    }
+    response = client.post("/api/v1/users/", json=new_user_data_same_email)
+    
+    assert response.status_code == 400 
+    assert "Email already registered" in response.json()["detail"]
+
+def test_signup_invalid_email_format(client: TestClient):
+    invalid_email_data = {
+        "email": "not-a-valid-email",
+        "password": "password123",
+        "full_name": "Invalid Email User"
+    }
+    response = client.post("/api/v1/users/", json=invalid_email_data)
+    assert response.status_code == 422 # FastAPI/Pydantic validation error
+
+def test_signup_missing_password(client: TestClient):
+    missing_password_data = {
+        "email": "user_no_pass@example.com",
+        # "password": "missing", # Password field omitted
+        "full_name": "User No Password"
+    }
+    response = client.post("/api/v1/users/", json=missing_password_data)
+    assert response.status_code == 422
+
+def test_signup_missing_email(client: TestClient):
+    missing_email_data = {
+        # "email": "user_no_email@example.com", # Email field omitted
+        "password": "password123",
+        "full_name": "User No Email"
+    }
+    response = client.post("/api/v1/users/", json=missing_email_data)
+    assert response.status_code == 422
