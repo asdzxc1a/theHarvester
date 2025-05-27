@@ -8,5 +8,7 @@ psycopg2-binary
 pytest
 httpx # Required by TestClient
 pytest-httpx # For mocking httpx calls in tests
+passlib[bcrypt] # For password hashing
+python-jose[cryptography] # For JWT handling
 python-dotenv # For managing environment variables from .env file, useful with settings.py
 # alembic # For database migrations (optional, but good practice)

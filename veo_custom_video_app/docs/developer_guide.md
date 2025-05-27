@@ -15,10 +15,11 @@ To set up the development environment:
     ```
 4.  **Install dependencies:**
     The application now uses PostgreSQL. Ensure you have `psycopg2-binary` (listed in `requirements.txt`) and other dependencies installed.
+    Key authentication-related dependencies include `passlib[bcrypt]` (for password hashing) and `python-jose[cryptography]` (for JWT handling).
     ```bash
     pip install -r requirements.txt 
     ```
-    If you also intend to run tests, ensure `pytest` and `httpx` are installed (they are included in `requirements.txt` under dev dependencies).
+    If you also intend to run tests, ensure `pytest`, `httpx`, and `pytest-httpx` are installed (they are included in `requirements.txt` under dev dependencies).
 
 ## Database Setup and Configuration (PostgreSQL)
 
@@ -76,7 +77,7 @@ The backend is organized as follows:
             *   `models.py`: Defines SQLAlchemy models (`Agency`, `Vision`, `Video`) which now inherit `Base` from `database.py`.
         *   `auth/`
             *   `__init__.py`: Makes `auth` a Python package.
-            *   `auth.py`: Implements API key authentication.
+            *   `auth.py`: Implements API key authentication, password hashing, JWT creation, and token-based user dependency functions (`get_current_user`, `get_current_active_user`).
         *   `tests/`: Contains all unit and integration tests.
     *   `config/`:
         *   `settings.py.example`: Example configuration file.
@@ -99,6 +100,7 @@ Key model fields relevant to Veo integration:
 *   **`Video.status` (String):** Reflects the processed status derived from the Veo operation (e.g., "processing", "completed", "failed", "error_fetching_status").
 
 The detailed model definitions (Agency, Vision, Video) remain largely the same but now reflect their persistence in PostgreSQL and the updated field meanings for Veo integration.
+A new `User` model has been added for storing user credentials and information.
 
 ## Services and External Integrations
 
@@ -144,9 +146,59 @@ The `VeoService.get_video_status` method returns a dictionary with the following
 *   `VeoOperationNotFound`: Specifically for 404 errors when an operation name is not found on GCP.
 The API routes in `api/routes.py` catch these exceptions and translate them into appropriate HTTP error responses.
 
-## Authentication (`auth/auth.py`)
+## Authentication System
 
-The API key authentication mechanism (`X-API-KEY` header) for accessing *this application's API* (not the external Google Cloud Veo API) is unchanged.
+The application is transitioning to a more robust authentication system. Phase 1 introduces JWT-based authentication for user-specific actions, while the existing static X-API-KEY may still protect some general backend endpoints.
+
+### Components:
+*   **`User` Model (`app/models.py`):**
+    *   A new SQLAlchemy model for storing user information, including `id`, `email`, `hashed_password`, `full_name`, `is_active`, `is_superuser`, `created_at`, and `updated_at`.
+*   **Password Hashing (`auth/auth.py`):**
+    *   Uses `passlib` with `bcrypt` for securely hashing and verifying user passwords.
+    *   Provides `get_password_hash()` and `verify_password()` utility functions.
+*   **JWT Configuration & Creation (`auth/auth.py` and `config/settings.py.example`):**
+    *   JWTs (JSON Web Tokens) are used for authenticating users.
+    *   **Configuration (in `config/settings.py`):**
+        *   `JWT_SECRET_KEY`: A strong, secret key used to sign and verify JWTs. **This must be kept secret and be unique for your deployment.** Generate a secure key (e.g., using `openssl rand -hex 32`).
+        *   `JWT_ALGORITHM`: The algorithm used for JWT signing (e.g., "HS256").
+        *   `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`: The duration for which an access token is valid.
+    *   **Token Creation:** The `create_access_token(data: dict, expires_delta: timedelta = None)` function in `auth/auth.py` generates JWTs. The "sub" (subject) claim typically stores the user's email.
+*   **JWT Verification & User Retrieval (`auth/auth.py`):**
+    *   `oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")`: Defines the OAuth2 password bearer flow, pointing to the login endpoint.
+    *   `get_current_user(token: str, db: Session)`: A FastAPI dependency that decodes the JWT from the `Authorization: Bearer <token>` header, validates it, and retrieves the corresponding user from the database.
+    *   `get_current_active_user(current_user: User)`: A FastAPI dependency that builds upon `get_current_user` to also ensure the user is active.
+*   **API Key Authentication (`auth/auth.py`):**
+    *   The existing static `X-API-KEY` mechanism is still in place for some endpoints. Endpoints are being progressively moved to JWT-based authentication.
+
+### Creating an Initial User
+To test the login functionality and JWT-protected endpoints, you first need a user in the database. A script is provided for this purpose:
+
+*   **Script Location:** `veo_custom_video_app/backend/create_initial_user.py`
+*   **Purpose:** Allows direct creation of a user in the database via a command-line interface.
+*   **Setup:**
+    1.  Ensure your `DEV_DATABASE_URL` environment variable is set correctly and points to your development PostgreSQL database.
+    2.  Make sure database tables (especially `users`) have been created by running the main FastAPI application at least once (`uvicorn main:app --reload`).
+    3.  Install dependencies from `requirements.txt`.
+*   **Usage:**
+    ```bash
+    # Navigate to veo_custom_video_app/backend/
+    python create_initial_user.py 
+    ```
+    The script will prompt for the user's email, password, superuser status, active status, and full name.
+
+### How to Login (Obtain JWT)
+Clients authenticate by sending a POST request to the `/api/v1/auth/login` endpoint.
+*   **Request Type:** `application/x-www-form-urlencoded` (standard for OAuth2 password flow).
+*   **Form Data:**
+    *   `username`: The user's email address.
+    *   `password`: The user's plain-text password.
+*   **Response:** If successful, the API returns a JSON object containing an `access_token` (the JWT) and `token_type` ("bearer").
+
+### Making Authenticated Requests (Using JWT)
+For endpoints protected by JWT authentication (e.g., `GET /api/v1/agencies/`):
+*   The client must include the JWT in the `Authorization` header.
+*   The header format is: `Authorization: Bearer <your_access_token>`
+    (Replace `<your_access_token>` with the actual token received from the login endpoint).
 
 ## Running Tests
 

@@ -1,11 +1,10 @@
 from fastapi import FastAPI
-from veo_custom_video_app.backend.api import routes as api_routes
+from veo_custom_video_app.backend.api.routes import router as api_key_router, auth_router, user_router # Import all routers
 from veo_custom_video_app.backend.services.veo_service import VeoService
 from veo_custom_video_app.backend.database import init_db, DATABASE_URL # Import init_db and potentially DATABASE_URL for logging
 
-# Global VeoService instance (for simplicity in this context)
-# In a production app, you'd likely use FastAPI's Depends for better management and testing.
-veo_service_instance = VeoService(api_key="FAKE_KEY", api_endpoint="https://fake-veo-api.com/v3")
+# Global VeoService instance. VeoService now loads its own config from settings/env.
+veo_service_instance = VeoService() 
 
 app = FastAPI(
     title="VEO Custom Video API",
@@ -27,9 +26,12 @@ async def startup_event():
 # Make the service instance available to routers/app state if needed,
 # though direct import or dependency injection in routes is cleaner.
 # For this example, we'll allow routes to import this instance.
-app.state.veo_service = veo_service_instance
+app.state.veo_service = veo_service_instance # This allows access via request.app.state.veo_service if needed
 
-app.include_router(api_routes.router, prefix="/api/v1")
+# Include the routers
+app.include_router(auth_router, prefix="/api/v1") # For /api/v1/auth/login
+app.include_router(user_router, prefix="/api/v1") # For JWT-protected endpoints like /api/v1/agencies/
+app.include_router(api_key_router, prefix="/api/v1") # For remaining API-key protected endpoints
 
 @app.get("/")
 async def read_root():

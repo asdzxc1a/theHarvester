@@ -15,7 +15,12 @@ from veo_custom_video_app.backend.services.veo_service import (
     ConfigurationError,
     VeoServiceError, # Base error for more generic catches if needed
 )
-from veo_custom_video_app.backend.auth.auth import get_api_key
+# Updated auth import to bring in more functions
+from veo_custom_video_app.backend import auth as auth_utils 
+from veo_custom_video_app.backend.auth.auth import get_api_key, get_current_active_user # Import JWT dependency
+
+# Security imports for login
+from fastapi.security import OAuth2PasswordRequestForm
 
 # Database related imports
 from sqlalchemy.orm import Session
@@ -28,6 +33,10 @@ from veo_custom_video_app.backend.app import models as db_models # Renamed to av
 # Ensure Agency, Vision, Video schemas have Config.orm_mode = True (already done)
 
 # --- Veo API Parameters Schema (NEW) ---
+# Note: pydantic.Field is imported but not used in the new schemas below.
+# It can be removed if not used elsewhere or kept for consistency.
+from pydantic import Field 
+
 class VeoApiParameters(BaseModel):
     storageUri: Optional[str] = Field(None, description="GCS URI for output. gs://bucket/path/")
     sampleCount: Optional[int] = Field(None, ge=1, le=4, description="Number of videos to generate (1-4).")
@@ -109,7 +118,39 @@ class Video(VideoBase):
 
 
 # --- API Routers ---
-router = APIRouter(dependencies=[Depends(get_api_key)])
+# The main router for most API endpoints, protected by API Key
+router = APIRouter(dependencies=[Depends(get_api_key)], tags=["Legacy API Key Endpoints"])
+
+# Auth router - for login, no API key needed
+auth_router = APIRouter(tags=["Authentication"])
+
+# New router for JWT-protected user-specific endpoints
+user_router = APIRouter(tags=["User Endpoints (JWT Secured)"])
+
+
+# --- Login Endpoint ---
+@auth_router.post("/auth/login", response_model=Token) 
+async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
+    user = db.query(db_models.User).filter(db_models.User.email == form_data.username).first()
+    
+    if not user or not auth_utils.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
+        
+    access_token_data = {"sub": user.email}
+    access_token = auth_utils.create_access_token(data=access_token_data)
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
 
 # Dependency function for VeoService (remains the same)
 async def get_veo_service():
@@ -117,6 +158,7 @@ async def get_veo_service():
 
 
 # --- Agency Endpoints ---
+# POST /agencies/ remains on the old API key router for now
 @router.post("/agencies/", response_model=Agency, status_code=status.HTTP_201_CREATED)
 async def create_agency(agency: AgencyCreate, db: Session = Depends(get_db)):
     # Check for existing agency by name or email
@@ -137,11 +179,18 @@ async def create_agency(agency: AgencyCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Agency already exists (email or name).")
     return db_agency
 
-@router.get("/agencies/", response_model=List[Agency])
-async def list_agencies(db: Session = Depends(get_db)):
+# GET /agencies/ is moved to user_router and protected by JWT
+@user_router.get("/agencies/", response_model=List[Agency])
+async def list_agencies(
+    db: Session = Depends(get_db), 
+    current_user: db_models.User = Depends(get_current_active_user)
+):
+    # current_user is now available, but not used for filtering in this step
+    # Future: could filter agencies based on current_user if there's a relationship
     agencies = db.query(db_models.Agency).all()
     return agencies
 
+# GET /agencies/{agency_id} remains on the old API key router for now
 @router.get("/agencies/{agency_id}", response_model=Agency)
 async def get_agency(agency_id: int, db: Session = Depends(get_db)):
     db_agency = db.query(db_models.Agency).filter(db_models.Agency.id == agency_id).first()

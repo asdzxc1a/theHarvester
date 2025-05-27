@@ -4,13 +4,60 @@ This document provides details about the backend API endpoints for the VEO Custo
 
 ## Authentication
 
-Access to the API requires an API key sent in the `X-API-KEY` header with each request.
+The API uses two primary methods for authentication:
 
-**Header:**
-`X-API-KEY: YOUR_SECRET_API_KEY`
+1.  **X-API-KEY (Static API Key):**
+    *   Many general backend endpoints are protected by a static API key.
+    *   **Header:** `X-API-KEY: YOUR_STATIC_API_KEY`
+    *   If the API key is missing or invalid, the server will respond with a `401 Unauthorized` error.
+    *   For development purposes, a hardcoded key (`SECRET_API_KEY_FOR_NOW` in `auth/auth.py`) is used for these endpoints.
 
-If the API key is missing or invalid, the server will respond with a `401 Unauthorized` error.
-For development purposes, the current key is `SECRET_API_KEY_FOR_NOW`.
+2.  **JWT Bearer Tokens (User Authentication):**
+    *   User-specific actions and new user-centric endpoints are protected by JWT Bearer Tokens.
+    *   To obtain a JWT, users must first authenticate via the `/api/v1/auth/login` endpoint.
+    *   **Header:** `Authorization: Bearer <your_access_token>`
+        (Replace `<your_access_token>` with the token received from the login endpoint).
+    *   If the token is missing, invalid, or expired, the server will typically respond with a `401 Unauthorized` or `403 Forbidden` error.
+
+Endpoints are progressively being transitioned to JWT-based authentication where appropriate. Check the specific authentication method required for each endpoint below.
+
+## Authentication Endpoints
+
+### 1. Login for Access Token
+
+*   **Endpoint:** `POST /api/v1/auth/login`
+*   **Description:** Authenticates a user based on email and password, and returns a JWT access token.
+*   **Authentication:** None required for this endpoint.
+*   **Request Body:** `application/x-www-form-urlencoded`
+    *   `username`: The user's email address.
+    *   `password`: The user's plain-text password.
+*   **Example Request (`curl`):**
+    ```bash
+    curl -X POST "http://localhost:8000/api/v1/auth/login" \
+         -H "Content-Type: application/x-www-form-urlencoded" \
+         -d "username=user@example.com&password=securepassword123"
+    ```
+*   **Success Response (200 OK):**
+    ```json
+    {
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", // Example JWT
+        "token_type": "bearer"
+    }
+    ```
+*   **Error Responses:**
+    *   `401 Unauthorized`: If email/password is incorrect.
+        ```json
+        {
+            "detail": "Incorrect email or password"
+        }
+        ```
+    *   `400 Bad Request`: If the user is inactive.
+        ```json
+        {
+            "detail": "Inactive user"
+        }
+        ```
+    *   `422 Unprocessable Entity`: If form data is malformed (e.g., missing fields).
 
 ## Agency Endpoints
 
@@ -44,6 +91,7 @@ Base URL: `/api/v1/agencies`
 
 *   **Endpoint:** `GET /agencies/`
 *   **Description:** Retrieves a list of all agencies.
+*   **Authentication:** JWT Bearer Token (`Authorization: Bearer <token>`)
 *   **Success Response (200 OK):**
     ```json
     [

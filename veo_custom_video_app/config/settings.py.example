@@ -55,3 +55,12 @@ VEO_MODEL_ID = "veo-3.0-generate-preview"
 
 # --- Frontend URL (Example from original file, if served separately) ---
 # FRONTEND_URL = "http://localhost:3000"
+
+
+# --- JWT Settings ---
+# Used for creating and verifying JWT access tokens in auth/auth.py
+# IMPORTANT: Keep JWT_SECRET_KEY secret in your actual settings.py!
+# Generate a strong secret key, e.g., using: openssl rand -hex 32
+JWT_SECRET_KEY = "YOUR_VERY_SECRET_JWT_KEY_PLEASE_CHANGE_ME"
+JWT_ALGORITHM = "HS256"
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 30 # Access token lifetime in minutes

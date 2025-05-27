@@ -1,7 +1,8 @@
 from datetime import datetime
 
 from sqlalchemy import (Column, DateTime, ForeignKey, Integer, JSON, String,
-                        Text)
+                        Text, Boolean) # Added Boolean
+from sqlalchemy.sql import func # Added for server_default and onupdate
 # Removed: from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -51,3 +52,22 @@ class Video(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     vision = relationship("Vision", back_populates="videos")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, index=True, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_superuser = Column(Boolean, default=False, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships will be added in later phases (e.g., to Agency)
+    # For example:
+    # agency_id = Column(Integer, ForeignKey('agencies.id'), nullable=True)
+    # agency = relationship("Agency", back_populates="users")
