@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+psycopg2-binary
+
+# For development and testing
+pytest
+httpx # Required by TestClient
+python-dotenv # For managing environment variables from .env file, useful with settings.py
+# alembic # For database migrations (optional, but good practice)

@@ -1,17 +1,29 @@
-# Example settings for the Veo Custom Video App
+# Example Settings for VEO Custom Video Application
 
-# Veo API Configuration
-VEO_API_KEY = "YOUR_VEO_API_KEY_HERE"
-VEO_API_ENDPOINT = "https://api.veo.co/v3" # Fictional endpoint
+# --- Database Configuration ---
+# Replace the values below with your actual PostgreSQL connection details.
+#
+# DATABASE_URL format: "postgresql://user:password@host:port/dbname"
+# - user: Your PostgreSQL username (e.g., "postgres")
+# - password: Your PostgreSQL password (e.g., "mysecretpassword")
+# - host: The hostname or IP address of your PostgreSQL server (e.g., "localhost" or "127.0.0.1")
+# - port: The port your PostgreSQL server is listening on (default is 5432)
+# - dbname: The name of the PostgreSQL database to connect to (e.g., "veo_app_db")
+DATABASE_URL = "postgresql://your_db_user:your_db_password@localhost:5432/veo_custom_video_db"
 
-# Database Configuration (Example for PostgreSQL)
-DATABASE_URL = "postgresql://user:password@host:port/database"
+# --- Veo API Configuration (Example) ---
+# These would be used by the VeoService if it were making real API calls.
+# VEO_API_KEY = "your_real_veo_api_key"
+# VEO_API_ENDPOINT = "https://api.veo.co/v3" # Or the actual endpoint
 
-# Application Settings
-DEBUG = True
-SECRET_KEY = "your_very_secret_application_key"
+# --- Application API Key (Example) ---
+# This is the key clients use to authenticate with this backend API.
+# For development, this might be hardcoded in auth/auth.py or loaded from here.
+# SECRET_API_KEY = "your_secret_api_key_for_backend_access"
 
-# Frontend URL (if served separately)
-FRONTEND_URL = "http://localhost:3000"
+# --- Application Settings (Example from original file) ---
+# DEBUG = True
+# SECRET_KEY = "your_very_secret_application_key" # For session management, CSRF, etc. if needed by FastAPI/Starlette features
 
-# Add other configuration variables as needed
+# --- Frontend URL (Example from original file, if served separately) ---
+# FRONTEND_URL = "http://localhost:3000"

@@ -32,6 +32,7 @@ Thumbs.db
 *.env
 config/secrets.py
 config/settings.local.py
+veo_custom_video_app/config/settings.py # Add this line
 config/*.json
 !config/*.json.example
 !config/settings.py.example
