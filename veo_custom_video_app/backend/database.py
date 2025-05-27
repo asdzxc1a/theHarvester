@@ -1,16 +1,25 @@
 from sqlalchemy import create_engine
+import os # Added import for os
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Attempt to import DATABASE_URL from user-created settings.py
-# If settings.py is not found, fall back to a placeholder and notify the user.
+# If settings.py is not found, fall back to environment variable then placeholder.
 try:
     from veo_custom_video_app.config.settings import DATABASE_URL
+    print(f"INFO: Successfully imported DATABASE_URL from config.settings: {DATABASE_URL}")
 except ModuleNotFoundError:
-    print("INFO: veo_custom_video_app.config.settings.py not found or DATABASE_URL not defined.")
-    print("INFO: Using placeholder DATABASE_URL for SQLAlchemy engine.")
-    print("INFO: Please create settings.py with your actual DATABASE_URL for the application to work correctly.")
-    DATABASE_URL = "postgresql://user:password@localhost:5432/veoapp_test_db" # Placeholder
+    print("INFO: veo_custom_video_app.config.settings.py not found or DATABASE_URL not defined there.")
+    # Diagnostic print:
+    env_db_url = os.getenv('DATABASE_URL')
+    print(f"DIAGNOSTIC: os.getenv('DATABASE_URL') returned: {env_db_url}")
+    if env_db_url:
+        DATABASE_URL = env_db_url
+        print(f"INFO: Using DATABASE_URL from environment variable: {DATABASE_URL}")
+    else:
+        DATABASE_URL = "postgresql://user:password@localhost:5432/veoapp_test_db" # Placeholder
+        print(f"INFO: Using placeholder DATABASE_URL as environment variable not set: {DATABASE_URL}")
+    print("INFO: For production, ensure DATABASE_URL is correctly set in .env or config/settings.py.")
 
 # Create SQLAlchemy engine
 # For production, consider connection pooling options, e.g., pool_size, max_overflow.

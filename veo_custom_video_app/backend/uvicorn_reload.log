@@ -1,0 +1,9 @@
+INFO:     Will watch for changes in these directories: ['/app/veo_custom_video_app/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [7440] using WatchFiles
+/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'orm_mode' has been renamed to 'from_attributes'
+  warnings.warn(message, UserWarning)
+INFO:     Started server process [7450]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

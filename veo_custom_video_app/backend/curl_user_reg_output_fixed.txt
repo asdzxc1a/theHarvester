@@ -1,0 +1,6 @@
+
+HTTP_STATUS_CODE:000
+
+HTTP_STATUS_CODE:000
+{"email":"testuser_fixed@example.com","full_name":"Test User Fixed","id":1,"is_active":true}
+HTTP_STATUS_CODE:201

@@ -1,0 +1,16 @@
+/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'orm_mode' has been renamed to 'from_attributes'
+  warnings.warn(message, UserWarning)
+/app/veo_custom_video_app/backend/main.py:20: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO: veo_custom_video_app.config.settings.py not found or DATABASE_URL not defined there.
+DIAGNOSTIC: os.getenv('DATABASE_URL') returned: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: Using DATABASE_URL from environment variable: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: For production, ensure DATABASE_URL is correctly set in .env or config/settings.py.
+INFO: veo_custom_video_app.config.settings.py not found or missing variables. Falling back to environment variables.
+INFO: VeoService initialized. Endpoint: https://us-central1-aiplatform.googleapis.com, Project: your-gcp-project-id, Region: us-central1, Model: veo-3.0-generate-preview, Token: *******************HERE

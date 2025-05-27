@@ -1,4 +1,9 @@
 from fastapi import FastAPI
+from dotenv import load_dotenv # Import load_dotenv
+
+# Load environment variables from .env file before other imports that might need them
+load_dotenv()
+
 from veo_custom_video_app.backend.api.routes import router as api_key_router, auth_router, user_router # Import all routers
 from veo_custom_video_app.backend.services.veo_service import VeoService
 from veo_custom_video_app.backend.database import init_db, DATABASE_URL # Import init_db and potentially DATABASE_URL for logging

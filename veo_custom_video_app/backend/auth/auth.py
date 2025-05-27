@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone # Ensure timezone is imported
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 
-from fastapi import Security, HTTPException, status
+from fastapi import Depends, Security, HTTPException, status # Added Depends
+from fastapi.security import OAuth2PasswordBearer
 from fastapi.security.api_key import APIKeyHeader
 from passlib.context import CryptContext
 
@@ -77,9 +78,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 from sqlalchemy.orm import Session
 from veo_custom_video_app.backend.database import get_db
 from veo_custom_video_app.backend.app import models as db_models
-# Import TokenData from routes.py (as established in previous steps)
-# Ideally, schemas would be in their own module (e.g., api.schemas) to avoid potential circular imports.
-from veo_custom_video_app.backend.api.routes import TokenData 
+# Import TokenData from the new app.schemas module
+from veo_custom_video_app.backend.app.schemas import TokenData
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> db_models.User:

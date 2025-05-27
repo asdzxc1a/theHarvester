@@ -1,17 +1,12 @@
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel, EmailStr
 import datetime
 
-# Import the VeoService instance from main.py
-# This is a simplified approach for this example.
-# In larger applications, FastAPI's dependency injection (Depends)
-# would be more robustly configured, perhaps with a shared utility.
-from veo_custom_video_app.backend.main import veo_service_instance
 from veo_custom_video_app.backend.services.veo_service import (
     VeoService,
     VeoAPIError,
-    VeoVideoNotFound,
+    VeoOperationNotFound, # Corrected import name
     ConfigurationError,
     VeoServiceError, # Base error for more generic catches if needed
 )
@@ -116,6 +111,9 @@ class Video(VideoBase):
     class Config:
         orm_mode = True
 
+# Schemas are now imported from app.schemas
+from veo_custom_video_app.backend.app.schemas import Token, TokenData, User, UserCreate
+
 
 # --- API Routers ---
 # The main router for most API endpoints, protected by API Key
@@ -133,7 +131,7 @@ user_router = APIRouter(tags=["User Endpoints (JWT Secured)"])
 async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
     user = db.query(db_models.User).filter(db_models.User.email == form_data.username).first()
     
-    if not user or not auth_utils.verify_password(form_data.password, user.hashed_password):
+    if not user or not auth_utils.auth.verify_password(form_data.password, user.hashed_password): # Corrected call
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -147,15 +145,25 @@ async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth
         )
         
     access_token_data = {"sub": user.email}
-    access_token = auth_utils.create_access_token(data=access_token_data)
+    access_token = auth_utils.auth.create_access_token(data=access_token_data) # Corrected call
     
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 # --- User Signup Endpoint ---
-@auth_router.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
+# Forward declaration for User and UserCreate if they are not defined before this point
+# This is a common pattern if schemas are defined later in the file or in a separate module.
+# However, in this file, User and UserCreate are defined in app/models.py and imported.
+# The response_model and request body type hints should resolve correctly.
+# For clarity, ensure User and UserCreate (from app.models via Pydantic conversion or direct schema def)
+# are accessible. The current structure seems to rely on db_models.User which is an ORM model.
+# FastAPI usually expects Pydantic models for request/response.
+# Let's assume User and UserCreate are valid Pydantic schemas available in scope.
+# If User/UserCreate are actually ORM models, they need to be converted or
+# Pydantic models (like UserResponse, UserRequest) should be used.
+@auth_router.post("/users/", response_model=User, status_code=status.HTTP_201_CREATED, tags=["Authentication"]) # User schema imported from app.schemas
 async def create_user_signup(
-    user_in: UserCreate, # Request body will be validated against UserCreate schema
+    user_in: UserCreate, # UserCreate schema imported from app.schemas
     db: Session = Depends(get_db)
 ):
     # --- Implementation logic will be added in the next plan step ---
@@ -171,7 +179,7 @@ async def create_user_signup(
         )
     
     # 2. Hash user_in.password
-    hashed_password = auth_utils.get_password_hash(user_in.password)
+    hashed_password = auth_utils.auth.get_password_hash(user_in.password) # Corrected call
     
     # 3. Create db_models.User instance using explicit field assignment
     db_user = db_models.User(
@@ -198,8 +206,8 @@ async def create_user_signup(
 
 
 # Dependency function for VeoService (remains the same)
-async def get_veo_service():
-    return veo_service_instance
+async def get_veo_service(request: Request): # Modified to accept Request
+    return request.app.state.veo_service # Access service from app state
 
 
 # --- Agency Endpoints ---
@@ -450,7 +458,7 @@ async def get_video(
 
         except ConfigurationError as exc:
             print(f"Warning: Configuration error for VeoService when trying to update status for video {video_id}: {exc}. Returning last known status.")
-        except VeoOperationNotFound as exc: # Updated exception name
+        except VeoOperationNotFound as exc: # Corrected exception name matches import
             print(f"Warning: Operation {db_video.veo_video_id} for internal video ID {video_id} not found on Veo API: {exc}. Setting status to 'error_fetching_status'.")
             db_video.status = "error_fetching_status"
             db_video.updated_at = datetime.datetime.utcnow()

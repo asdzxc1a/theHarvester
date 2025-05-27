@@ -1,0 +1,71 @@
+/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'orm_mode' has been renamed to 'from_attributes'
+  warnings.warn(message, UserWarning)
+INFO:     Started server process [11883]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+(trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+AttributeError: module 'bcrypt' has no attribute '__about__'
+INFO: veo_custom_video_app.config.settings.py not found or DATABASE_URL not defined there.
+DIAGNOSTIC: os.getenv('DATABASE_URL') returned: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: Using DATABASE_URL from environment variable: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: For production, ensure DATABASE_URL is correctly set in .env or config/settings.py.
+INFO: veo_custom_video_app.config.settings.py not found or missing variables. Falling back to environment variables.
+INFO: VeoService initialized. Endpoint: https://us-central1-aiplatform.googleapis.com, Project: your-gcp-project-id, Region: us-central1, Model: veo-3.0-generate-preview, Token: *******************HERE
+INFO:     Starting up application...
+INFO:     Attempting to initialize database tables with DATABASE_URL: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: Initializing database with URL: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: Attempting to create tables for models found in: /app/veo_custom_video_app/backend/app/models.py
+INFO: Tables to be created: dict_keys(['agencies', 'visions', 'videos', 'users'])
+INFO: Database tables created successfully (if they didn't exist).
+INFO:     Database tables initialization process completed.
+INFO:     127.0.0.1:35784 - "POST /api/v1/auth/login HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/fastapi/applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/applications.py", line 112, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/middleware/errors.py", line 187, in __call__
+    raise exc
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/middleware/errors.py", line 165, in __call__
+    await self.app(scope, receive, _send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/routing.py", line 714, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/routing.py", line 734, in app
+    await route.handle(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/routing.py", line 288, in handle
+    await self.app(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/routing.py", line 76, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/starlette/routing.py", line 73, in app
+    response = await f(request)
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/fastapi/routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+  File "/app/veo_custom_video_app/backend/api/routes.py", line 148, in login_for_access_token
+    access_token = auth_utils.create_access_token(data=access_token_data)
+AttributeError: module 'veo_custom_video_app.backend.auth' has no attribute 'create_access_token'
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11883]

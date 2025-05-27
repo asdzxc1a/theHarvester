@@ -1,0 +1,30 @@
+/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/pydantic/_internal/_config.py:373: UserWarning: Valid config keys have changed in V2:
+* 'orm_mode' has been renamed to 'from_attributes'
+  warnings.warn(message, UserWarning)
+INFO:     Started server process [12120]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+(trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "/app/veo_custom_video_app/backend/.venv/lib/python3.10/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+AttributeError: module 'bcrypt' has no attribute '__about__'
+INFO: veo_custom_video_app.config.settings.py not found or DATABASE_URL not defined there.
+DIAGNOSTIC: os.getenv('DATABASE_URL') returned: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: Using DATABASE_URL from environment variable: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: For production, ensure DATABASE_URL is correctly set in .env or config/settings.py.
+INFO: veo_custom_video_app.config.settings.py not found or missing variables. Falling back to environment variables.
+INFO: VeoService initialized. Endpoint: https://us-central1-aiplatform.googleapis.com, Project: your-gcp-project-id, Region: us-central1, Model: veo-3.0-generate-preview, Token: *******************HERE
+INFO:     Starting up application...
+INFO:     Attempting to initialize database tables with DATABASE_URL: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: Initializing database with URL: postgresql://veo_user:veo_password@localhost:5432/veo_video_app_db
+INFO: Attempting to create tables for models found in: /app/veo_custom_video_app/backend/app/models.py
+INFO: Tables to be created: dict_keys(['agencies', 'visions', 'videos', 'users'])
+INFO: Database tables created successfully (if they didn't exist).
+INFO:     Database tables initialization process completed.
+INFO:     127.0.0.1:47702 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [12120]
