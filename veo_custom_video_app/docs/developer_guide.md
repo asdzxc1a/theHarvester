@@ -85,37 +85,80 @@ The backend is organized as follows:
         *   `api_documentation.md`: Detailed documentation for each API endpoint.
         *   `developer_guide.md`: This file.
 
-## Models (`app/models.py`)
-
-SQLAlchemy models define the structure for data stored in the PostgreSQL database.
-*   All models now inherit `Base` from `veo_custom_video_app.backend.database`.
-*   Relationships (e.g., `Agency.visions`, `Vision.videos`) are configured with `cascade="all, delete-orphan"` options in the models to ensure that deleting a parent object (like an Agency) also deletes its child objects (Visions, and subsequently Videos).
 The detailed model definitions (Agency, Vision, Video) remain largely the same but now reflect their persistence in PostgreSQL.
 
-## Services (`services/veo_service.py`)
+## Services and External Integrations
 
-The `VeoService` remains responsible for interactions with the (mock) Veo API. Its functionality is unchanged by the database migration.
+### Veo 3 API Integration (`services/veo_service.py`)
+
+The `veo_custom_video_app/backend/services/veo_service.py` module contains the `VeoService` class, which is responsible for all communication with the external Veo 3 API. This service now makes real HTTP requests.
+
+**Role of `VeoService`:**
+*   Abstracts the details of interacting with the Veo 3 API.
+*   Handles request formatting, authentication with the Veo API, and parsing responses.
+*   Manages errors related to API communication and configuration.
+
+**Configuration:**
+*   To connect to the Veo 3 API, `VeoService` requires an API key and the API endpoint URL.
+*   These must be configured in `veo_custom_video_app/config/settings.py` (which should be created by copying `settings.py.example` and is gitignored) or as environment variables:
+    *   `VEO_API_KEY`: Your secret API key for the Veo 3 API.
+    *   `VEO_API_ENDPOINT`: The base URL for the Veo 3 API (e.g., `https://api.veo.com/v3`).
+*   If these settings are not found, `VeoService` will raise a `ConfigurationError` upon initialization.
+
+**Assumed Veo 3 API Contract:**
+The current implementation of `VeoService` assumes the following contract with the Veo 3 API. *This is an assumed contract based on the requirements and may need adjustment if official Veo 3 API documentation differs.*
+
+*   **Authentication:** Uses Bearer Token authentication. The `VEO_API_KEY` is sent in the `Authorization` header as `Bearer <VEO_API_KEY>`.
+*   **Submit Video Request (`POST /videos` relative to `VEO_API_ENDPOINT`):**
+    *   **Request Payload:** A JSON object like:
+        ```json
+        {
+            "vision_name": "Name of the Vision/Campaign",
+            "custom_parameters": { ... } // Parameters specific to the vision
+        }
+        ```
+    *   **Success Response (201 Created):** A JSON object expected to contain at least:
+        ```json
+        {
+            "veo_video_id": "unique_video_id_from_veo",
+            "status": "initial_status_from_veo" // e.g., "submitted"
+        }
+        ```
+*   **Get Video Status (`GET /videos/{veo_video_id}` relative to `VEO_API_ENDPOINT`):**
+    *   **Success Response (200 OK):** A JSON object expected to contain:
+        ```json
+        {
+            "veo_video_id": "unique_video_id_from_veo",
+            "status": "current_video_status", // e.g., "processing", "completed", "failed"
+            "download_url": "url_to_video_if_completed_or_null"
+        }
+        ```
+    *   **Not Found Response (404 Not Found):** If the video ID does not exist on the Veo API.
+
+**Custom Exceptions:**
+`VeoService` may raise the following custom exceptions (defined in `services/veo_service.py`):
+*   `ConfigurationError`: If `VEO_API_KEY` or `VEO_API_ENDPOINT` are not configured.
+*   `VeoAPIError`: For general errors when interacting with the Veo API (e.g., unexpected status codes, request failures). Contains `status_code` and `error_info` attributes.
+*   `VeoVideoNotFound`: A subclass of `VeoAPIError`, specifically for 404 errors when trying to fetch a video's status.
+The API routes in `api/routes.py` are designed to catch these exceptions and generally translate them into appropriate HTTP error responses (e.g., 500 Internal Server Error for configuration issues, 502 Bad Gateway for API errors, 404 Not Found for video not found on Veo).
 
 ## Authentication (`auth/auth.py`)
 
-The API key authentication mechanism (`X-API-KEY` header) is also unchanged.
+The API key authentication mechanism (`X-API-KEY` header) for accessing *this application's API* (not the external Veo API) is unchanged.
 
 ## Running Tests
 
 The project uses `pytest` for unit and integration testing.
 
 1.  **Test Environment:**
-    *   API tests (`test_api_routes.py`) now run against an **in-memory SQLite database**. This is configured in `veo_custom_video_app/backend/tests/conftest.py`.
-    *   Using SQLite in-memory provides fast and isolated tests for API logic without requiring a running PostgreSQL server for most development testing.
-    *   The `conftest.py` file handles:
-        *   Setting up the SQLite engine.
-        *   Creating the database schema before tests run and tearing it down afterwards.
-        *   Providing a transactional database session to each test, ensuring changes are rolled back and tests are isolated.
-        *   Overriding the application's `get_db` dependency to use this test database session.
-    *   For full end-to-end testing that precisely mirrors the production PostgreSQL environment, a separate PostgreSQL test database and configuration would be ideal. However, for unit and most integration tests, SQLite offers a good balance of speed and realism.
+    *   **API Tests (`test_api_routes.py`):** These tests run against an **in-memory SQLite database**, configured in `veo_custom_video_app/backend/tests/conftest.py`. This provides fast and isolated tests for API logic without requiring a running PostgreSQL server for most development testing. `conftest.py` handles schema creation, session management, and overriding the `get_db` dependency.
+    *   **`VeoService` Tests (`test_veo_service.py`):**
+        *   Tests for `VeoService` now use **`pytest-httpx`** to mock external HTTP calls to the Veo 3 API.
+        *   This approach allows testing of request formatting (URL, headers, payload), response parsing, and error handling logic within `VeoService` without making actual network calls to the Veo API.
+        *   It also allows testing of the `VeoService`'s configuration loading mechanism (`__init__`) by mocking environment variables and the settings module.
 
 2.  **Running Test Commands:**
-    *   Ensure `pytest` and `httpx` are installed (they are included in `veo_custom_video_app/backend/requirements.txt`).
+    *   Ensure `pytest`, `httpx`, and `pytest-httpx` are installed (they are included in `veo_custom_video_app/backend/requirements.txt`).
     *   Navigate to the `veo_custom_video_app/backend/` directory.
     *   Run `pytest`:
         ```bash
@@ -125,13 +168,13 @@ The project uses `pytest` for unit and integration testing.
         ```bash
         pytest -v
         ```
-    *   No new commands are needed; `conftest.py` automatically configures the test environment.
+    *   No new commands are needed; `conftest.py` automatically configures the test environment for both API and service tests.
 
 ## Future Enhancements (Conceptual)
 
-*   **Real Veo API Integration:** Update `VeoService` to make actual HTTP requests.
+*   **Real Veo API Integration:** (This is now largely complete, further refinements might be needed based on actual API behavior).
 *   **Background Tasks:** Implement a proper background task manager (e.g., Celery) for video generation.
 *   **Advanced Authentication/Authorization:** Implement more granular user roles or agency-specific API keys.
-*   **Configuration Management:** Further enhance configuration management (e.g., using Pydantic's settings management).
+*   **Configuration Management:** Further enhance configuration management (e.g., using Pydantic's settings management for `settings.py`).
 *   **Database Migrations:** Implement Alembic for managing database schema changes.
 *   **Comprehensive Logging and Error Handling.**

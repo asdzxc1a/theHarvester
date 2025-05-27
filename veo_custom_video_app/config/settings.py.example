@@ -11,10 +11,12 @@
 # - dbname: The name of the PostgreSQL database to connect to (e.g., "veo_app_db")
 DATABASE_URL = "postgresql://your_db_user:your_db_password@localhost:5432/veo_custom_video_db"
 
-# --- Veo API Configuration (Example) ---
-# These would be used by the VeoService if it were making real API calls.
-# VEO_API_KEY = "your_real_veo_api_key"
-# VEO_API_ENDPOINT = "https://api.veo.co/v3" # Or the actual endpoint
+# --- Veo 3 API Configuration ---
+# These settings are for connecting to the actual Veo 3 API.
+# You MUST provide your real VEO_API_KEY in your settings.py file.
+# The VEO_API_ENDPOINT is provided as an example and should be verified against official Veo documentation.
+VEO_API_KEY = "YOUR_VEO_API_KEY_HERE"
+VEO_API_ENDPOINT = "https://api.veo.com/v3" # Example: Verify with official Veo documentation
 
 # --- Application API Key (Example) ---
 # This is the key clients use to authenticate with this backend API.

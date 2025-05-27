@@ -7,5 +7,6 @@ psycopg2-binary
 # For development and testing
 pytest
 httpx # Required by TestClient
+pytest-httpx # For mocking httpx calls in tests
 python-dotenv # For managing environment variables from .env file, useful with settings.py
 # alembic # For database migrations (optional, but good practice)

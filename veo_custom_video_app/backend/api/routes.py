@@ -8,7 +8,13 @@ import datetime
 # In larger applications, FastAPI's dependency injection (Depends)
 # would be more robustly configured, perhaps with a shared utility.
 from veo_custom_video_app.backend.main import veo_service_instance
-from veo_custom_video_app.backend.services.veo_service import VeoService
+from veo_custom_video_app.backend.services.veo_service import (
+    VeoService,
+    VeoAPIError,
+    VeoVideoNotFound,
+    ConfigurationError,
+    VeoServiceError, # Base error for more generic catches if needed
+)
 from veo_custom_video_app.backend.auth.auth import get_api_key
 
 # Database related imports
@@ -237,9 +243,24 @@ async def create_video_for_vision(
         raise HTTPException(status_code=400, detail="Vision is missing veo_parameters needed for video creation.")
 
     try:
-        veo_response = await veo_service.submit_video_request(vision_parameters=db_vision.veo_parameters)
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Veo service unavailable or error: {str(e)}")
+        # Pass vision_name if your VeoService's submit_video_request expects it
+        veo_response = await veo_service.submit_video_request(
+            vision_name=db_vision.name, 
+            vision_parameters=db_vision.veo_parameters
+        )
+    except ConfigurationError as exc:
+        # Log error: print(f"Configuration error for VeoService: {exc}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Server configuration error related to video service.")
+    except VeoAPIError as exc:
+        # Log error: print(f"Veo API error during submission: {exc.status_code} - {exc.error_info}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Video API error: {exc.status_code} - {exc.error_info}")
+    except VeoServiceError as exc: # Catch other VeoService specific errors
+        # Log error: print(f"VeoService error during submission: {exc}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred with the video service: {exc}")
+    except Exception as exc: # Generic fallback
+        # Log error: print(f"Generic error during video submission: {exc}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {exc}")
+
 
     db_video = db_models.Video(
         vision_id=vision_id,
@@ -278,8 +299,33 @@ async def get_video(
                 db_video.updated_at = datetime.datetime.utcnow() # Manually update timestamp
                 db.commit()
                 db.refresh(db_video)
-        except Exception as e:
-            print(f"Error updating video status from VeoService for video {video_id}: {str(e)}")
-            # Not raising HTTPException here to allow users to see last known status
+        except ConfigurationError as exc:
+            # Log error: print(f"Configuration error for VeoService: {exc}")
+            # For a GET request, we might not want to expose this as a 500 to the client if the primary resource (db_video) was found.
+            # However, if the status update is critical, a 500 might be appropriate.
+            # For now, let's log and proceed with potentially stale data, or raise a specific error.
+            print(f"Warning: Configuration error for VeoService when trying to update status for video {video_id}: {exc}. Returning last known status.")
+            # Or raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Server configuration error for video status update.")
+        except VeoVideoNotFound as exc:
+            # This means the video is in our DB but not found on Veo anymore. This is an inconsistency.
+            # Log warning: print(f"Video {db_video.veo_video_id} for internal ID {video_id} not found on Veo API: {exc}")
+            # We could set a special status here, e.g., "status_unknown" or "error_fetching_status"
+            # For now, we'll just return the last known status.
+            db_video.status = "error_fetching_status" # Example of updating status
+            db.commit()
+            db.refresh(db_video)
+            # Alternatively, re-raise as a 404 for the video if it's considered critical that it's on Veo
+            # raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except VeoAPIError as exc:
+            # Log error: print(f"Veo API error during status update for video {video_id}: {exc.status_code} - {exc.error_info}")
+            # Similar to ConfigurationError, decide if this should break the request or just log.
+            print(f"Warning: Veo API error when trying to update status for video {video_id}: {exc}. Returning last known status.")
+            # Or raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Video status API error: {exc.status_code} - {exc.error_info}")
+        except VeoServiceError as exc:
+            # Log error: print(f"VeoService error during status update for video {video_id}: {exc}")
+            print(f"Warning: VeoService error when trying to update status for video {video_id}: {exc}. Returning last known status.")
+        except Exception as exc: # Generic fallback
+            # Log error: print(f"Generic error during video status update for video {video_id}: {exc}")
+            print(f"Warning: Generic error when trying to update status for video {video_id}: {exc}. Returning last known status.")
 
     return db_video
