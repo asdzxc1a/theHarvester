@@ -1,0 +1,17 @@
+# Example settings for the Veo Custom Video App
+
+# Veo API Configuration
+VEO_API_KEY = "YOUR_VEO_API_KEY_HERE"
+VEO_API_ENDPOINT = "https://api.veo.co/v3" # Fictional endpoint
+
+# Database Configuration (Example for PostgreSQL)
+DATABASE_URL = "postgresql://user:password@host:port/database"
+
+# Application Settings
+DEBUG = True
+SECRET_KEY = "your_very_secret_application_key"
+
+# Frontend URL (if served separately)
+FRONTEND_URL = "http://localhost:3000"
+
+# Add other configuration variables as needed
