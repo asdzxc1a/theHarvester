@@ -537,7 +537,7 @@ async def test_get_video_status_and_updates(client: TestClient):
     data1 = response1.json()
     assert data1["id"] == video_id
     assert data1["veo_video_id"] == veo_video_id
-    assert data1["status"] == "submitted"  # This status is from the old mock VeoService
+    assert data1["status"] == "processing"  # Updated to reflect initial status after VeoService refactor
     assert data1.get("download_url") is None
 
     # ... remaining assertions are based on old mock logic ...
@@ -546,6 +546,164 @@ async def test_get_video_status_and_updates(client: TestClient):
 def test_get_non_existent_video(client: TestClient):
     response = client.get("/api/v1/videos/99999") # Assuming 99999 does not exist
     assert response.status_code == 404
+
+# --- Login Endpoint Tests ---
+from veo_custom_video_app.backend.app.models import User as UserModel
+from veo_custom_video_app.backend.auth.auth import get_password_hash, create_access_token # Added create_access_token
+from jose import jwt
+from veo_custom_video_app.backend.auth.auth import SECRET_KEY, ALGORITHM 
+from sqlalchemy.orm import Session # For type hinting db_session
+from datetime import timedelta # Added timedelta
+
+# Helper function to create a user directly in DB for login tests
+def create_db_user(db: Session, email: str, plain_password: str, is_active: bool = True, full_name: str = None, is_superuser: bool = False) -> UserModel:
+    hashed_password = get_password_hash(plain_password)
+    user = UserModel(
+        email=email, 
+        hashed_password=hashed_password, 
+        is_active=is_active,
+        full_name=full_name,
+        is_superuser=is_superuser
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+def test_login_successful(client: TestClient, db_session: Session):
+    test_email = "login_success@example.com"
+    test_password = "goodpassword123"
+    create_db_user(db_session, test_email, test_password, is_active=True)
+    
+    login_data = {"username": test_email, "password": test_password}
+    response = client.post("/api/v1/auth/login", data=login_data) # Use data for form submission
+    
+    assert response.status_code == 200
+    token_data = response.json()
+    assert "access_token" in token_data
+    assert isinstance(token_data["access_token"], str)
+    assert token_data["token_type"] == "bearer"
+    
+    # Optional: Decode token to verify 'sub' and 'exp'
+    decoded_token = jwt.decode(token_data["access_token"], SECRET_KEY, algorithms=[ALGORITHM])
+    assert decoded_token["sub"] == test_email
+    assert "exp" in decoded_token
+
+def test_login_incorrect_password(client: TestClient, db_session: Session):
+    test_email = "wrong_pass@example.com"
+    test_password = "actual_password"
+    create_db_user(db_session, test_email, test_password)
+    
+    login_data = {"username": test_email, "password": "incorrect_password_attempt"}
+    response = client.post("/api/v1/auth/login", data=login_data)
+    
+    assert response.status_code == 401
+    assert "Incorrect email or password" in response.json()["detail"]
+    assert response.headers.get("WWW-Authenticate") == "Bearer"
+
+
+def test_login_user_not_found(client: TestClient, db_session: Session): # db_session is here to ensure clean DB
+    login_data = {"username": "nonexistent_user@example.com", "password": "anypassword"}
+    response = client.post("/api/v1/auth/login", data=login_data)
+    
+    assert response.status_code == 401 # Same error as incorrect password for security
+    assert "Incorrect email or password" in response.json()["detail"]
+
+def test_login_inactive_user(client: TestClient, db_session: Session):
+    test_email = "inactive_user@example.com"
+    test_password = "password123"
+    create_db_user(db_session, test_email, test_password, is_active=False)
+    
+    login_data = {"username": test_email, "password": test_password}
+    response = client.post("/api/v1/auth/login", data=login_data)
+    
+    assert response.status_code == 400 # As per current route implementation
+    assert "Inactive user" in response.json()["detail"]
+
+def test_login_missing_fields(client: TestClient):
+    # Test with missing username (email)
+    response_no_user = client.post("/api/v1/auth/login", data={"password": "somepassword"})
+    assert response_no_user.status_code == 422 # FastAPI validation error for missing form field
+    
+    # Test with missing password
+    response_no_pass = client.post("/api/v1/auth/login", data={"username": "user@example.com"})
+    assert response_no_pass.status_code == 422
+
+# --- JWT Protected Endpoint Tests (/api/v1/agencies/) ---
+
+# Helper function to log in a user and get a token
+def login_user_and_get_token(client: TestClient, email: str, password: str) -> str:
+    response = client.post("/api/v1/auth/login", data={"username": email, "password": password})
+    assert response.status_code == 200, f"Login failed: {response.json()}"
+    return response.json()["access_token"]
+
+def test_get_agencies_with_valid_token(client: TestClient, db_session: Session):
+    # Setup: Create an active user
+    user_email = "jwt_test_user@example.com"
+    user_password = "securepassword"
+    create_db_user(db_session, user_email, user_password, is_active=True)
+    
+    # Get token
+    token = login_user_and_get_token(client, user_email, user_password)
+    
+    # Act: Access protected endpoint
+    headers = {"Authorization": f"Bearer {token}"}
+    # Ensure to call the correct endpoint for listing agencies that is JWT protected
+    # This is /api/v1/agencies/ as per previous changes for user_router
+    response = client.get("/api/v1/agencies/", headers=headers) 
+    
+    # Assert
+    assert response.status_code == 200
+    assert isinstance(response.json(), list) 
+
+def test_get_agencies_no_token(client: TestClient):
+    response = client.get("/api/v1/agencies/") # No Authorization header
+    # This endpoint is on user_router, which doesn't have X-API-KEY dependency by default.
+    # FastAPI's default for missing OAuth2 token is 401 if auto_error=True (which it is for oauth2_scheme).
+    assert response.status_code == 401 
+    assert "Not authenticated" in response.json()["detail"].lower()
+
+def test_get_agencies_invalid_token_malformed(client: TestClient):
+    headers = {"Authorization": "Bearer thisisnotavalidjwttoken"}
+    response = client.get("/api/v1/agencies/", headers=headers)
+    assert response.status_code == 401 
+    assert "Could not validate credentials" in response.json()["detail"] # From get_current_user
+
+# test_get_agencies_invalid_token_wrong_secret is skipped as its core failure mode (JWTError)
+# is covered by test_get_agencies_invalid_token_malformed.
+
+def test_get_agencies_expired_token(client: TestClient, db_session: Session):
+    user_email = "jwt_expired_user@example.com"
+    user_password = "securepassword"
+    create_db_user(db_session, user_email, user_password, is_active=True)
+    
+    # Create an expired token by setting expires_delta to a negative value
+    expired_token = create_access_token(data={"sub": user_email}, expires_delta=timedelta(minutes=-5))
+    
+    headers = {"Authorization": f"Bearer {expired_token}"}
+    response = client.get("/api/v1/agencies/", headers=headers)
+    
+    assert response.status_code == 401
+    assert "Could not validate credentials" in response.json()["detail"] # Expired token also raises JWTError
+
+def test_get_agencies_valid_token_inactive_user(client: TestClient, db_session: Session):
+    user_email = "jwt_inactive_user@example.com"
+    user_password = "securepassword"
+    # Create user, initially active to get a token
+    user = create_db_user(db_session, user_email, user_password, is_active=True)
+    token = login_user_and_get_token(client, user_email, user_password)
+    
+    # Make user inactive AFTER token is issued
+    user.is_active = False
+    db_session.commit()
+    db_session.refresh(user)
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.get("/api/v1/agencies/", headers=headers)
+    
+    assert response.status_code == 400 # From get_current_active_user
+    assert "Inactive user" in response.json()["detail"]
+
 
 def test_delete_agency_cascades(client: TestClient):
     # 1. Create agency
