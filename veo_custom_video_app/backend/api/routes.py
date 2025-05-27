@@ -27,6 +27,21 @@ from veo_custom_video_app.backend.app import models as db_models # Renamed to av
 # Schemas are defined below.
 # Ensure Agency, Vision, Video schemas have Config.orm_mode = True (already done)
 
+# --- Veo API Parameters Schema (NEW) ---
+class VeoApiParameters(BaseModel):
+    storageUri: Optional[str] = Field(None, description="GCS URI for output. gs://bucket/path/")
+    sampleCount: Optional[int] = Field(None, ge=1, le=4, description="Number of videos to generate (1-4).")
+    duration: Optional[float] = Field(None, ge=5, le=8, description="Video duration in seconds (5-8).")
+    aspectRatio: Optional[str] = Field(None, pattern=r"^(16:9|9:16)$", description="Aspect ratio ('16:9' or '9:16').")
+    negativePrompt: Optional[str] = Field(None, description="Negative prompt.")
+    personGeneration: Optional[str] = Field(None, pattern=r"^(allow_adult|disallow)$", description="Person generation setting.")
+    seed: Optional[int] = Field(None, description="Seed for reproducible results.")
+    # Add any other known Veo 3.0 parameters here if they become known
+
+    class Config:
+        extra = 'allow' # Allow other parameters not explicitly defined
+        orm_mode = True # Though not directly from ORM, useful if nested in other ORM models
+
 # Agency Schemas
 class AgencyBase(BaseModel):
     name: str
@@ -51,18 +66,20 @@ class Agency(AgencyBase):
 class VisionBase(BaseModel):
     name: str
     description: Optional[str] = None
-    veo_parameters: Optional[Dict] = None
+    prompt: str # Added: Main text prompt for video generation
+    veo_parameters: Optional[VeoApiParameters] = None # Updated: Use structured Pydantic model
 
 class VisionCreate(VisionBase):
     pass
 
-class VisionUpdate(VisionBase):
+class VisionUpdate(BaseModel): # VisionUpdate needs to be flexible, not inherit all required fields from VisionBase
     name: Optional[str] = None
     description: Optional[str] = None
-    veo_parameters: Optional[Dict] = None
+    prompt: Optional[str] = None
+    veo_parameters: Optional[VeoApiParameters] = None
 
 
-class Vision(VisionBase):
+class Vision(VisionBase): # This is the response model
     id: int
     agency_id: int
     created_at: datetime.datetime
@@ -180,7 +197,15 @@ async def create_vision_for_agency(agency_id: int, vision: VisionCreate, db: Ses
     if not db_agency:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agency not found")
     
-    db_vision = db_models.Vision(**vision.dict(), agency_id=agency_id)
+    db_vision_data = vision.dict(exclude_unset=True) # Use exclude_unset for partial updates if needed, though create usually has all
+    
+    # Handle nested Pydantic model for veo_parameters
+    if vision.veo_parameters is not None:
+        db_vision_data["veo_parameters"] = vision.veo_parameters.dict(exclude_none=True)
+    else:
+        db_vision_data["veo_parameters"] = None # Ensure it's explicitly None if not provided
+
+    db_vision = db_models.Vision(**db_vision_data, agency_id=agency_id)
     db.add(db_vision)
     db.commit()
     db.refresh(db_vision)
@@ -207,9 +232,15 @@ async def update_vision(vision_id: int, vision_update: VisionUpdate, db: Session
     if db_vision is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vision not found")
 
-    update_data = vision_update.dict(exclude_unset=True)
+    update_data = vision_update.dict(exclude_unset=True) 
+    
     for key, value in update_data.items():
-        setattr(db_vision, key, value)
+        if key == "veo_parameters" and value is not None:
+            # If veo_parameters is being updated, convert Pydantic model to dict
+            setattr(db_vision, key, value.dict(exclude_none=True))
+        elif value is not None: # Ensure other fields are also set if provided
+            setattr(db_vision, key, value)
+
     db_vision.updated_at = datetime.datetime.utcnow() # Manually update timestamp
     db.commit()
     db.refresh(db_vision)
@@ -239,14 +270,18 @@ async def create_video_for_vision(
     if not db_vision:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vision not found")
 
-    if not db_vision.veo_parameters:
-        raise HTTPException(status_code=400, detail="Vision is missing veo_parameters needed for video creation.")
+    if not db_vision.prompt: # Check for prompt explicitly
+        raise HTTPException(status_code=400, detail="Vision is missing the required prompt for video creation.")
+    
+    # veo_parameters can be None or an empty dict if not provided, which is fine for VeoService
+    api_params = db_vision.veo_parameters if db_vision.veo_parameters is not None else {}
 
     try:
         # Pass vision_name if your VeoService's submit_video_request expects it
-        veo_response = await veo_service.submit_video_request(
-            vision_name=db_vision.name, 
-            vision_parameters=db_vision.veo_parameters
+        # The VeoService now expects `prompt` and `parameters` separately
+        operation_name = await veo_service.submit_video_request(
+            prompt=db_vision.prompt,
+            parameters=api_params # This should be a dict
         )
     except ConfigurationError as exc:
         # Log error: print(f"Configuration error for VeoService: {exc}")
@@ -262,10 +297,12 @@ async def create_video_for_vision(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {exc}")
 
 
+    # The Veo API (Vertex AI) returns an operation name, not directly veo_video_id and status.
+    # Store the operation name in veo_video_id for now. Status will be 'submitted' or 'processing'.
     db_video = db_models.Video(
         vision_id=vision_id,
-        veo_video_id=veo_response.get("veo_video_id"),
-        status=veo_response.get("status", "submission_failed") # Default if Veo doesn't provide status
+        veo_video_id=operation_name, # Store operation_name here
+        status="processing" # Initial status after submitting to Vertex AI
     )
     db.add(db_video)
     db.commit()
@@ -283,49 +320,53 @@ async def get_video(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
 
     non_terminal_statuses = ["pending", "submitted", "processing"]
-    if db_video.status in non_terminal_statuses and db_video.veo_video_id:
+    # veo_video_id now stores the operation_name from Vertex AI
+    if db_video.status in non_terminal_statuses and db_video.veo_video_id: 
         try:
-            veo_status_response = await veo_service.get_video_status(veo_video_id=db_video.veo_video_id)
+            # veo_video_id is actually the operation_name here
+            operation_status_response = await veo_service.get_video_status(operation_name=db_video.veo_video_id) 
             
-            needs_update = False
-            if veo_status_response.get("status") and db_video.status != veo_status_response.get("status"):
-                db_video.status = veo_status_response["status"]
-                needs_update = True
-            if veo_status_response.get("download_url") and db_video.download_url != veo_status_response.get("download_url"):
-                db_video.download_url = veo_status_response["download_url"]
-                needs_update = True
+            needs_db_update = False
+            new_status = db_video.status # Keep current status unless changed by API response
+
+            if operation_status_response["done"]:
+                if operation_status_response.get("error"):
+                    new_status = "failed"
+                elif operation_status_response.get("video_uris"):
+                    new_status = "completed"
+                    # Assuming we only store one download URL for now, take the first one.
+                    # The Video model's download_url field would store this.
+                    if operation_status_response["video_uris"]:
+                        if db_video.download_url != operation_status_response["video_uris"][0]:
+                            db_video.download_url = operation_status_response["video_uris"][0]
+                            needs_db_update = True
+                else: # Done, but no error and no video_uris (unexpected state)
+                    new_status = "completed_unknown_response"
+            else: # Not done yet
+                new_status = "processing" # Or keep current if it's more specific like 'submitted'
+
+            if db_video.status != new_status:
+                db_video.status = new_status
+                needs_db_update = True
             
-            if needs_update:
-                db_video.updated_at = datetime.datetime.utcnow() # Manually update timestamp
+            if needs_db_update:
+                db_video.updated_at = datetime.datetime.utcnow()
                 db.commit()
                 db.refresh(db_video)
+
         except ConfigurationError as exc:
-            # Log error: print(f"Configuration error for VeoService: {exc}")
-            # For a GET request, we might not want to expose this as a 500 to the client if the primary resource (db_video) was found.
-            # However, if the status update is critical, a 500 might be appropriate.
-            # For now, let's log and proceed with potentially stale data, or raise a specific error.
             print(f"Warning: Configuration error for VeoService when trying to update status for video {video_id}: {exc}. Returning last known status.")
-            # Or raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Server configuration error for video status update.")
-        except VeoVideoNotFound as exc:
-            # This means the video is in our DB but not found on Veo anymore. This is an inconsistency.
-            # Log warning: print(f"Video {db_video.veo_video_id} for internal ID {video_id} not found on Veo API: {exc}")
-            # We could set a special status here, e.g., "status_unknown" or "error_fetching_status"
-            # For now, we'll just return the last known status.
-            db_video.status = "error_fetching_status" # Example of updating status
+        except VeoOperationNotFound as exc: # Updated exception name
+            print(f"Warning: Operation {db_video.veo_video_id} for internal video ID {video_id} not found on Veo API: {exc}. Setting status to 'error_fetching_status'.")
+            db_video.status = "error_fetching_status"
+            db_video.updated_at = datetime.datetime.utcnow()
             db.commit()
             db.refresh(db_video)
-            # Alternatively, re-raise as a 404 for the video if it's considered critical that it's on Veo
-            # raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
         except VeoAPIError as exc:
-            # Log error: print(f"Veo API error during status update for video {video_id}: {exc.status_code} - {exc.error_info}")
-            # Similar to ConfigurationError, decide if this should break the request or just log.
             print(f"Warning: Veo API error when trying to update status for video {video_id}: {exc}. Returning last known status.")
-            # Or raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Video status API error: {exc.status_code} - {exc.error_info}")
         except VeoServiceError as exc:
-            # Log error: print(f"VeoService error during status update for video {video_id}: {exc}")
             print(f"Warning: VeoService error when trying to update status for video {video_id}: {exc}. Returning last known status.")
-        except Exception as exc: # Generic fallback
-            # Log error: print(f"Generic error during video status update for video {video_id}: {exc}")
+        except Exception as exc: 
             print(f"Warning: Generic error when trying to update status for video {video_id}: {exc}. Returning last known status.")
 
     return db_video

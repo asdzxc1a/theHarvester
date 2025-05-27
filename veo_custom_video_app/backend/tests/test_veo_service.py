@@ -7,215 +7,253 @@ from veo_custom_video_app.backend.services.veo_service import (
     VeoService,
     ConfigurationError,
     VeoAPIError,
-    VeoVideoNotFound
+    VeoOperationNotFound # Updated Exception Name
 )
 
-# Define default test values for API key and endpoint
-TEST_API_KEY = "test_api_key_123"
-TEST_API_ENDPOINT = "https://fake-veo-api.com/test_v3"
+# Define default test values for Google Cloud Veo API
+TEST_GCP_ACCESS_TOKEN = "test_gcp_access_token_123"
+TEST_BASE_ENDPOINT = "https://us-central1-aiplatform.googleapis.com" # Example base
+TEST_PROJECT_ID = "test-gcp-project"
+TEST_REGION = "us-central1" # Should match the region in TEST_BASE_ENDPOINT for consistency
+TEST_MODEL_ID = "veo-3.0-test-model"
 
 
 @pytest.fixture
-def mock_env_vars(monkeypatch):
-    """Fixture to mock environment variables for VeoService configuration."""
-    monkeypatch.setenv("VEO_API_KEY", TEST_API_KEY)
-    monkeypatch.setenv("VEO_API_ENDPOINT", TEST_API_ENDPOINT)
+def mock_env_vars_gcp(monkeypatch):
+    """Fixture to mock environment variables for VeoService (GCP version)."""
+    monkeypatch.setenv("VEO_API_KEY", TEST_GCP_ACCESS_TOKEN)
+    monkeypatch.setenv("VEO_API_ENDPOINT", TEST_BASE_ENDPOINT)
+    monkeypatch.setenv("VEO_PROJECT_ID", TEST_PROJECT_ID)
+    monkeypatch.setenv("VEO_REGION", TEST_REGION)
+    monkeypatch.setenv("VEO_MODEL_ID", TEST_MODEL_ID)
     # Ensure settings module is not found by default, forcing env var usage
     monkeypatch.setitem(sys.modules, "veo_custom_video_app.config.settings", None)
 
-
 @pytest.fixture
-def mock_settings_module(monkeypatch):
-    """Fixture to mock the settings module for VeoService configuration."""
-    class MockSettings:
-        VEO_API_KEY = "settings_api_key_456"
-        VEO_API_ENDPOINT = "https://fake-veo-api-from-settings.com/test_v3"
+def mock_settings_module_gcp(monkeypatch):
+    """Fixture to mock the settings module for VeoService (GCP version)."""
+    class MockSettingsGCP:
+        VEO_API_KEY = "settings_gcp_token_456"
+        VEO_API_ENDPOINT = "https://europe-west1-aiplatform.googleapis.com"
+        VEO_PROJECT_ID = "settings-gcp-project"
+        VEO_REGION = "europe-west1"
+        VEO_MODEL_ID = "veo-3.0-settings-model"
 
-    monkeypatch.setitem(sys.modules, "veo_custom_video_app.config.settings", MockSettings())
-    return MockSettings
+    monkeypatch.setitem(sys.modules, "veo_custom_video_app.config.settings", MockSettingsGCP())
+    return MockSettingsGCP
 
 
-def test_veo_service_init_success_from_env(mock_env_vars):
-    """Test VeoService initializes correctly using environment variables."""
+def test_veo_service_init_success_from_env_gcp(mock_env_vars_gcp):
     service = VeoService()
-    assert service.api_key == TEST_API_KEY
-    assert service.api_endpoint == TEST_API_ENDPOINT
+    assert service.gcp_access_token == TEST_GCP_ACCESS_TOKEN
+    assert service.base_endpoint == TEST_BASE_ENDPOINT
+    assert service.project_id == TEST_PROJECT_ID
+    assert service.region == TEST_REGION
+    assert service.model_id == TEST_MODEL_ID
     assert isinstance(service.client, httpx.AsyncClient)
 
-def test_veo_service_init_success_from_settings_module(mock_settings_module, monkeypatch):
-    """Test VeoService initializes correctly using the settings module, overriding env vars."""
-    # Set env vars to ensure settings module takes precedence
-    monkeypatch.setenv("VEO_API_KEY", "env_key_should_be_overridden")
-    monkeypatch.setenv("VEO_API_ENDPOINT", "env_endpoint_should_be_overridden")
+def test_veo_service_init_success_from_settings_module_gcp(mock_settings_module_gcp, monkeypatch):
+    # Set some env vars to ensure settings module takes precedence
+    monkeypatch.setenv("VEO_PROJECT_ID", "env_project_should_be_overridden")
     
     service = VeoService()
-    assert service.api_key == mock_settings_module.VEO_API_KEY
-    assert service.api_endpoint == mock_settings_module.VEO_API_ENDPOINT
+    assert service.gcp_access_token == mock_settings_module_gcp.VEO_API_KEY
+    assert service.base_endpoint == mock_settings_module_gcp.VEO_API_ENDPOINT
+    assert service.project_id == mock_settings_module_gcp.VEO_PROJECT_ID
+    assert service.region == mock_settings_module_gcp.VEO_REGION
+    assert service.model_id == mock_settings_module_gcp.VEO_MODEL_ID
 
-def test_veo_service_init_missing_api_key(monkeypatch):
-    """Test ConfigurationError is raised if VEO_API_KEY is missing."""
-    monkeypatch.delenv("VEO_API_KEY", raising=False)
-    monkeypatch.setenv("VEO_API_ENDPOINT", TEST_API_ENDPOINT)
+def test_veo_service_init_derive_region_from_endpoint(monkeypatch):
+    monkeypatch.setenv("VEO_API_KEY", TEST_GCP_ACCESS_TOKEN)
+    monkeypatch.setenv("VEO_API_ENDPOINT", "https://australia-southeast1-aiplatform.googleapis.com")
+    monkeypatch.setenv("VEO_PROJECT_ID", TEST_PROJECT_ID)
+    monkeypatch.setenv("VEO_MODEL_ID", TEST_MODEL_ID)
+    monkeypatch.delenv("VEO_REGION", raising=False) # Ensure VEO_REGION is not set
     monkeypatch.setitem(sys.modules, "veo_custom_video_app.config.settings", None)
-    with pytest.raises(ConfigurationError, match="VEO_API_KEY is not configured"):
-        VeoService()
+    
+    service = VeoService()
+    assert service.region == "australia-southeast1"
 
-def test_veo_service_init_missing_api_endpoint(monkeypatch):
-    """Test ConfigurationError is raised if VEO_API_ENDPOINT is missing."""
-    monkeypatch.setenv("VEO_API_KEY", TEST_API_KEY)
-    monkeypatch.delenv("VEO_API_ENDPOINT", raising=False)
+@pytest.mark.parametrize("missing_var", ["VEO_API_KEY", "VEO_API_ENDPOINT", "VEO_PROJECT_ID"])
+def test_veo_service_init_missing_required_config(monkeypatch, missing_var):
+    monkeypatch.setenv("VEO_API_KEY", TEST_GCP_ACCESS_TOKEN)
+    monkeypatch.setenv("VEO_API_ENDPOINT", TEST_BASE_ENDPOINT)
+    monkeypatch.setenv("VEO_PROJECT_ID", TEST_PROJECT_ID)
+    monkeypatch.setenv("VEO_REGION", TEST_REGION)
+    monkeypatch.setenv("VEO_MODEL_ID", TEST_MODEL_ID)
+    
+    monkeypatch.delenv(missing_var, raising=False)
     monkeypatch.setitem(sys.modules, "veo_custom_video_app.config.settings", None)
-    with pytest.raises(ConfigurationError, match="VEO_API_ENDPOINT is not configured"):
+    
+    with pytest.raises(ConfigurationError, match=f"{missing_var.split('_', 1)[1]}.* not configured"): # Adjusted match
         VeoService()
-
 
 @pytest.mark.asyncio
-async def test_submit_video_request_success(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_submit_video_request_success_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    expected_response_json = {"veo_video_id": "vid_123_abc", "status": "submitted"}
+    expected_operation_name = f"projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/operations/fakeop123"
     
     httpx_mock.add_response(
         method="POST",
-        url=f"{TEST_API_ENDPOINT}/videos",
-        json=expected_response_json,
-        status_code=201
+        url=f"{TEST_BASE_ENDPOINT}/v1/projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/publishers/google/models/{TEST_MODEL_ID}:predictLongRunning",
+        json={"name": expected_operation_name},
+        status_code=200 # Vertex AI LRO submission is 200 OK
     )
     
-    vision_name = "My Test Vision"
-    vision_params = {"prompt": "A cool video", "style": "cinematic"}
-    result = await service.submit_video_request(vision_name, vision_params)
+    prompt = "A futuristic cityscape"
+    parameters = {"duration": 5, "storageUri": "gs://my-bucket/output/"}
+    result_op_name = await service.submit_video_request(prompt, parameters)
     
-    assert result == expected_response_json
+    assert result_op_name == expected_operation_name
     
     request = httpx_mock.get_request()
     assert request is not None
     assert request.method == "POST"
-    assert request.url == f"{TEST_API_ENDPOINT}/videos"
-    assert request.headers["Authorization"] == f"Bearer {TEST_API_KEY}"
+    assert request.headers["Authorization"] == f"Bearer {TEST_GCP_ACCESS_TOKEN}"
     assert request.headers["Content-Type"] == "application/json"
-    assert await request.read() == b'{"vision_name": "My Test Vision", "custom_parameters": {"prompt": "A cool video", "style": "cinematic"}}'
+    expected_payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": parameters
+    }
+    assert await request.read() == pytest.approx(expected_payload, abs=1e-9) # Using approx for dict comparison
 
 @pytest.mark.asyncio
-async def test_submit_video_request_api_error(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_submit_video_request_api_error_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    error_response_json = {"error": {"code": "invalid_param", "message": "Invalid parameter provided"}}
+    error_response_json = {"error": {"code": 400, "message": "Invalid argument"}}
     
     httpx_mock.add_response(
         method="POST",
-        url=f"{TEST_API_ENDPOINT}/videos",
+        url=f"{TEST_BASE_ENDPOINT}/v1/projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/publishers/google/models/{TEST_MODEL_ID}:predictLongRunning",
         json=error_response_json,
         status_code=400
     )
     
     with pytest.raises(VeoAPIError) as exc_info:
-        await service.submit_video_request("Test Vision", {"param": "value"})
+        await service.submit_video_request("Test prompt", {})
     
     assert exc_info.value.status_code == 400
     assert exc_info.value.error_info == error_response_json
 
 @pytest.mark.asyncio
-async def test_submit_video_request_network_error(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_submit_video_request_network_error_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    httpx_mock.add_exception(ConnectError("Simulated connection failure"))
+    httpx_mock.add_exception(ConnectError("Simulated GCP connection failure"))
     
-    with pytest.raises(VeoAPIError) as exc_info: # VeoService wraps httpx.RequestError in VeoAPIError
-        await service.submit_video_request("Test Vision", {"param": "value"})
-    assert exc_info.value.status_code == 503 # As per VeoService implementation
-    assert "Request to Veo API failed: Simulated connection failure" in str(exc_info.value)
+    with pytest.raises(VeoAPIError) as exc_info:
+        await service.submit_video_request("Test prompt", {})
+    assert exc_info.value.status_code == 503
+    assert "Request to Google Cloud Veo API failed: Simulated GCP connection failure" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
-async def test_get_video_status_success_completed(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_get_video_status_success_processing_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    veo_video_id = "vid_completed_123"
-    expected_response_json = {
-        "veo_video_id": veo_video_id,
-        "status": "completed",
-        "download_url": f"{TEST_API_ENDPOINT}/downloads/{veo_video_id}.mp4"
-    }
+    operation_name = f"projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/operations/op_processing_123"
+    mock_api_response = {"name": operation_name, "done": False}
     
     httpx_mock.add_response(
         method="GET",
-        url=f"{TEST_API_ENDPOINT}/videos/{veo_video_id}",
-        json=expected_response_json,
+        url=f"{TEST_BASE_ENDPOINT}/v1/{operation_name}",
+        json=mock_api_response,
         status_code=200
     )
     
-    result = await service.get_video_status(veo_video_id)
-    assert result == expected_response_json
+    expected_result = {
+        "operation_name": operation_name,
+        "done": False,
+        "status": "processing",
+        "video_uris": [],
+        "error": None
+    }
+    result = await service.get_video_status(operation_name)
+    assert result == expected_result
     
     request = httpx_mock.get_request()
     assert request is not None
     assert request.method == "GET"
-    assert request.url == f"{TEST_API_ENDPOINT}/videos/{veo_video_id}"
-    assert request.headers["Authorization"] == f"Bearer {TEST_API_KEY}"
+    assert request.url == f"{TEST_BASE_ENDPOINT}/v1/{operation_name}"
+    assert request.headers["Authorization"] == f"Bearer {TEST_GCP_ACCESS_TOKEN}"
 
 @pytest.mark.asyncio
-async def test_get_video_status_success_processing(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_get_video_status_success_completed_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    veo_video_id = "vid_processing_456"
-    expected_response_json = {
-        "veo_video_id": veo_video_id,
-        "status": "processing",
-        "download_url": None 
+    operation_name = f"projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/operations/op_completed_456"
+    video_uri = f"gs://{TEST_PROJECT_ID}-bucket/video_completed.mp4"
+    mock_api_response = {
+        "name": operation_name,
+        "done": True,
+        "response": {
+            "@type": "type.googleapis.com/google.cloud.aiplatform.v1.PredictLongRunningResponse",
+            "generatedVideos": [{"video": video_uri}]
+        }
     }
+    httpx_mock.add_response(method="GET", url=f"{TEST_BASE_ENDPOINT}/v1/{operation_name}", json=mock_api_response, status_code=200)
     
-    httpx_mock.add_response(
-        method="GET",
-        url=f"{TEST_API_ENDPOINT}/videos/{veo_video_id}",
-        json=expected_response_json,
-        status_code=200
-    )
-    
-    result = await service.get_video_status(veo_video_id)
-    assert result == expected_response_json
+    expected_result = {
+        "operation_name": operation_name,
+        "done": True,
+        "status": "completed",
+        "video_uris": [video_uri],
+        "error": None
+    }
+    result = await service.get_video_status(operation_name)
+    assert result == expected_result
 
 @pytest.mark.asyncio
-async def test_get_video_status_not_found(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_get_video_status_failed_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    veo_video_id = "vid_not_found_789"
-    error_response_json = {"error": "Video not found"}
+    operation_name = f"projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/operations/op_failed_789"
+    error_payload = {"code": 3, "message": "Job failed due to resource exhaustion."}
+    mock_api_response = {"name": operation_name, "done": True, "error": error_payload}
+    httpx_mock.add_response(method="GET", url=f"{TEST_BASE_ENDPOINT}/v1/{operation_name}", json=mock_api_response, status_code=200)
     
-    httpx_mock.add_response(
-        method="GET",
-        url=f"{TEST_API_ENDPOINT}/videos/{veo_video_id}",
-        json=error_response_json,
-        status_code=404
-    )
+    expected_result = {
+        "operation_name": operation_name,
+        "done": True,
+        "status": "failed",
+        "video_uris": [],
+        "error": error_payload
+    }
+    result = await service.get_video_status(operation_name)
+    assert result == expected_result
+
+@pytest.mark.asyncio
+async def test_get_video_status_not_found_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
+    service = VeoService()
+    operation_name = f"projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/operations/op_not_found"
+    error_response_json = {"error": "Operation not found"}
     
-    with pytest.raises(VeoVideoNotFound) as exc_info:
-        await service.get_video_status(veo_video_id)
+    httpx_mock.add_response(method="GET", url=f"{TEST_BASE_ENDPOINT}/v1/{operation_name}", json=error_response_json, status_code=404)
+    
+    with pytest.raises(VeoOperationNotFound) as exc_info: # Updated Exception
+        await service.get_video_status(operation_name)
     
     assert exc_info.value.status_code == 404
     assert exc_info.value.error_info == error_response_json
-    assert f"Video with ID '{veo_video_id}' not found" in str(exc_info.value)
+    assert f"Operation with name '{operation_name}' not found" in str(exc_info.value)
 
 @pytest.mark.asyncio
-async def test_get_video_status_api_error(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_get_video_status_api_error_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    veo_video_id = "vid_api_error_101"
-    error_response_json = {"error": "Internal server error on Veo side"}
+    operation_name = f"projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/operations/op_server_error"
+    error_response_json = {"error": "Internal server error on GCP side"}
     
-    httpx_mock.add_response(
-        method="GET",
-        url=f"{TEST_API_ENDPOINT}/videos/{veo_video_id}",
-        json=error_response_json,
-        status_code=500
-    )
+    httpx_mock.add_response(method="GET", url=f"{TEST_BASE_ENDPOINT}/v1/{operation_name}", json=error_response_json, status_code=500)
     
     with pytest.raises(VeoAPIError) as exc_info:
-        await service.get_video_status(veo_video_id)
+        await service.get_video_status(operation_name)
         
     assert exc_info.value.status_code == 500
     assert exc_info.value.error_info == error_response_json
 
 @pytest.mark.asyncio
-async def test_get_video_status_network_error(httpx_mock: HTTPXMock, mock_env_vars):
+async def test_get_video_status_network_error_gcp(httpx_mock: HTTPXMock, mock_env_vars_gcp):
     service = VeoService()
-    veo_video_id = "vid_network_error_112"
-    httpx_mock.add_exception(TimeoutException("Simulated timeout"))
+    operation_name = f"projects/{TEST_PROJECT_ID}/locations/{TEST_REGION}/operations/op_network_issue"
+    httpx_mock.add_exception(TimeoutException("Simulated GCP timeout"))
     
-    with pytest.raises(VeoAPIError) as exc_info: # VeoService wraps httpx.RequestError in VeoAPIError
-        await service.get_video_status(veo_video_id)
+    with pytest.raises(VeoAPIError) as exc_info:
+        await service.get_video_status(operation_name)
     assert exc_info.value.status_code == 503
-    assert "Request to Veo API failed: Simulated timeout" in str(exc_info.value)
+    assert "Request to Google Cloud Veo API failed: Simulated GCP timeout" in str(exc_info.value)

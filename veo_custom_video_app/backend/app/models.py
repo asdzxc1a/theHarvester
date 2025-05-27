@@ -29,7 +29,8 @@ class Vision(Base):
     agency_id = Column(Integer, ForeignKey("agencies.id"), nullable=False) # Implicit ON DELETE RESTRICT by default
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    veo_parameters = Column(JSON, nullable=True)
+    prompt = Column(Text, nullable=False) # Added new prompt field
+    veo_parameters = Column(JSON, nullable=True) # Stores structured VeoApiParameters
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

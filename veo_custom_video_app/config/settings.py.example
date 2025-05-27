@@ -11,15 +11,41 @@
 # - dbname: The name of the PostgreSQL database to connect to (e.g., "veo_app_db")
 DATABASE_URL = "postgresql://your_db_user:your_db_password@localhost:5432/veo_custom_video_db"
 
-# --- Veo 3 API Configuration ---
-# These settings are for connecting to the actual Veo 3 API.
-# You MUST provide your real VEO_API_KEY in your settings.py file.
-# The VEO_API_ENDPOINT is provided as an example and should be verified against official Veo documentation.
-VEO_API_KEY = "YOUR_VEO_API_KEY_HERE"
-VEO_API_ENDPOINT = "https://api.veo.com/v3" # Example: Verify with official Veo documentation
+# --- Google Cloud Vertex AI Veo 3.0 API Configuration ---
+# These settings are for connecting to the Google Cloud Vertex AI Veo 3.0 API.
+# You MUST provide these values in your local settings.py file (copied from this example).
 
-# --- Application API Key (Example) ---
-# This is the key clients use to authenticate with this backend API.
+# VEO_API_KEY: This should be your GCP Access Token.
+#   How to obtain:
+#   - If running on GCP (e.g., Cloud Run, GKE, GCE): Application Default Credentials (ADC)
+#     can often be used automatically by Google client libraries. For direct httpx calls,
+#     you might need to explicitly fetch a token (e.g., using `gcloud auth print-access-token`).
+#   - If running locally for development: `gcloud auth application-default login` and then
+#     `gcloud auth application-default print-access-token` to get a token.
+#   - For service accounts: Create and use a service account key (less recommended for local dev).
+#   This token is short-lived and needs to be refreshed periodically.
+VEO_API_KEY = "YOUR_GCP_ACCESS_TOKEN_HERE"
+
+# VEO_API_ENDPOINT: The REGIONAL endpoint for Vertex AI.
+# Example: "https://us-central1-aiplatform.googleapis.com"
+# Ensure this matches the region where your project and Veo model are available.
+VEO_API_ENDPOINT = "https://us-central1-aiplatform.googleapis.com"
+
+# VEO_PROJECT_ID: Your Google Cloud Project ID.
+VEO_PROJECT_ID = "your-gcp-project-id"
+
+# VEO_REGION: The Google Cloud region for your project and Veo model.
+# This is often part of the VEO_API_ENDPOINT but is used separately for constructing full resource paths.
+# Example: "us-central1"
+VEO_REGION = "us-central1"
+
+# VEO_MODEL_ID: The specific Veo model ID you are using.
+# Example: "veo-3.0-generate-preview" or a specific fine-tuned model ID.
+VEO_MODEL_ID = "veo-3.0-generate-preview"
+
+
+# --- Application API Key (This App's Own API Key) ---
+# This is the key clients use to authenticate with THIS backend API (not Google's).
 # For development, this might be hardcoded in auth/auth.py or loaded from here.
 # SECRET_API_KEY = "your_secret_api_key_for_backend_access"
 

@@ -70,7 +70,7 @@ The backend is organized as follows:
             *   `routes.py`: Defines all API endpoints (routers), Pydantic schemas for request/response validation, and the core CRUD logic using SQLAlchemy ORM.
         *   `services/`
             *   `__init__.py`: Makes `services` a Python package.
-            *   `veo_service.py`: Contains the `VeoService` class (currently mock).
+            *   `veo_service.py`: Contains the `VeoService` class, now integrating with the official Google Cloud Vertex AI Veo 3.0 API.
         *   `app/`
             *   `__init__.py`: Makes `app` a Python package.
             *   `models.py`: Defines SQLAlchemy models (`Agency`, `Vision`, `Video`) which now inherit `Base` from `database.py`.
@@ -85,66 +85,68 @@ The backend is organized as follows:
         *   `api_documentation.md`: Detailed documentation for each API endpoint.
         *   `developer_guide.md`: This file.
 
-The detailed model definitions (Agency, Vision, Video) remain largely the same but now reflect their persistence in PostgreSQL.
+## Models (`app/models.py`)
+
+SQLAlchemy models define the structure for data stored in the PostgreSQL database.
+*   All models now inherit `Base` from `veo_custom_video_app.backend.database`.
+*   Relationships (e.g., `Agency.visions`, `Vision.videos`) are configured with `cascade="all, delete-orphan"` options in the models to ensure that deleting a parent object (like an Agency) also deletes its child objects (Visions, and subsequently Videos).
+
+Key model fields relevant to Veo integration:
+*   **`Vision.prompt` (Text, Not Null):** Stores the main text prompt for video generation, used as the primary input for the Veo API.
+*   **`Vision.veo_parameters` (JSON, Nullable):** Stores a JSON object of additional parameters for the Veo API. This structure should align with the `parameters` block of the Google Cloud Vertex AI Veo API, as defined by the `VeoApiParameters` Pydantic model in `api/routes.py` (e.g., `storageUri`, `duration`, `aspectRatio`).
+*   **`Video.veo_video_id` (String, Nullable):** This field now stores the `operation_name` returned by the Google Cloud Vertex AI API after submitting a video generation job (e.g., `projects/.../locations/.../operations/...`). This name is crucial for polling the operation's status.
+*   **`Video.download_url` (String, Nullable):** Stores the GCS URI of the generated video (e.g., `gs://bucket/path/video.mp4`). This is typically the first URI from the `video_uris` list returned by a completed Veo operation.
+*   **`Video.status` (String):** Reflects the processed status derived from the Veo operation (e.g., "processing", "completed", "failed", "error_fetching_status").
+
+The detailed model definitions (Agency, Vision, Video) remain largely the same but now reflect their persistence in PostgreSQL and the updated field meanings for Veo integration.
 
 ## Services and External Integrations
 
-### Veo 3 API Integration (`services/veo_service.py`)
+### Google Cloud Vertex AI Veo 3.0 API Integration (`services/veo_service.py`)
 
-The `veo_custom_video_app/backend/services/veo_service.py` module contains the `VeoService` class, which is responsible for all communication with the external Veo 3 API. This service now makes real HTTP requests.
+The `veo_custom_video_app/backend/services/veo_service.py` module contains the `VeoService` class, which is responsible for all communication with the **official Google Cloud Vertex AI Veo 3.0 API** (e.g., using a model like `veo-3.0-generate-preview` via the `predictLongRunning` endpoint).
 
 **Role of `VeoService`:**
-*   Abstracts the details of interacting with the Veo 3 API.
-*   Handles request formatting, authentication with the Veo API, and parsing responses.
+*   Abstracts the details of interacting with the Google Cloud Vertex AI Veo 3.0 API.
+*   Handles request formatting, authentication with the GCP API, and parsing responses.
 *   Manages errors related to API communication and configuration.
 
 **Configuration:**
-*   To connect to the Veo 3 API, `VeoService` requires an API key and the API endpoint URL.
-*   These must be configured in `veo_custom_video_app/config/settings.py` (which should be created by copying `settings.py.example` and is gitignored) or as environment variables:
-    *   `VEO_API_KEY`: Your secret API key for the Veo 3 API.
-    *   `VEO_API_ENDPOINT`: The base URL for the Veo 3 API (e.g., `https://api.veo.com/v3`).
-*   If these settings are not found, `VeoService` will raise a `ConfigurationError` upon initialization.
+To connect to the Google Cloud Vertex AI Veo 3.0 API, `VeoService` requires specific GCP configurations. These must be set in `veo_custom_video_app/config/settings.py` (copied from `settings.py.example` and gitignored) or as environment variables. Refer to `veo_custom_video_app/config/settings.py.example` for detailed comments and placeholders:
+*   `VEO_API_KEY`: This must be a valid **GCP Access Token**. It's used as a Bearer token for authenticating with the Vertex AI API.
+*   `VEO_API_ENDPOINT`: The regional base URL for the Vertex AI API (e.g., `https://us-central1-aiplatform.googleapis.com`).
+*   `VEO_PROJECT_ID`: Your Google Cloud Project ID.
+*   `VEO_REGION`: The GCP region where your project and Veo model are available (e.g., `us-central1`). `VeoService` can derive this from `VEO_API_ENDPOINT` if not explicitly set.
+*   `VEO_MODEL_ID`: The specific Veo model ID (e.g., `veo-3.0-generate-preview`). Defaults to `"veo-3.0-generate-preview"` if not set.
+If these settings are not correctly configured, `VeoService` will raise a `ConfigurationError`.
 
-**Assumed Veo 3 API Contract:**
-The current implementation of `VeoService` assumes the following contract with the Veo 3 API. *This is an assumed contract based on the requirements and may need adjustment if official Veo 3 API documentation differs.*
+**API Interaction Flow (Asynchronous Operations - `predictLongRunning`):**
+The service uses the `predictLongRunning` pattern common in Google Cloud AI APIs:
+1.  **Submission:** `VeoService.submit_video_request(prompt: str, parameters: dict)` sends a request to the Vertex AI API.
+    *   The `prompt` is taken from the `Vision.prompt` field.
+    *   The `parameters` argument is a dictionary derived from `Vision.veo_parameters` (which itself is structured by the `VeoApiParameters` Pydantic model). This dictionary should conform to the structure expected by the Vertex AI Veo API's `parameters` block (e.g., fields like `storageUri`, `duration`, `aspectRatio`, `sampleCount`, `negativePrompt`, `personGeneration`, `seed`).
+    *   If successful, the API returns an `operation_name` (e.g., `projects/.../locations/.../operations/...`). This `operation_name` is what our application stores in the `Video.veo_video_id` field.
+2.  **Polling for Status:** `VeoService.get_video_status(operation_name: str)` is used to check the status of the long-running operation.
+    *   This method polls the operation endpoint (`/v1/{operation_name}`).
 
-*   **Authentication:** Uses Bearer Token authentication. The `VEO_API_KEY` is sent in the `Authorization` header as `Bearer <VEO_API_KEY>`.
-*   **Submit Video Request (`POST /videos` relative to `VEO_API_ENDPOINT`):**
-    *   **Request Payload:** A JSON object like:
-        ```json
-        {
-            "vision_name": "Name of the Vision/Campaign",
-            "custom_parameters": { ... } // Parameters specific to the vision
-        }
-        ```
-    *   **Success Response (201 Created):** A JSON object expected to contain at least:
-        ```json
-        {
-            "veo_video_id": "unique_video_id_from_veo",
-            "status": "initial_status_from_veo" // e.g., "submitted"
-        }
-        ```
-*   **Get Video Status (`GET /videos/{veo_video_id}` relative to `VEO_API_ENDPOINT`):**
-    *   **Success Response (200 OK):** A JSON object expected to contain:
-        ```json
-        {
-            "veo_video_id": "unique_video_id_from_veo",
-            "status": "current_video_status", // e.g., "processing", "completed", "failed"
-            "download_url": "url_to_video_if_completed_or_null"
-        }
-        ```
-    *   **Not Found Response (404 Not Found):** If the video ID does not exist on the Veo API.
+**Interpreting Video Status and Output (from `VeoService.get_video_status`):**
+The `VeoService.get_video_status` method returns a dictionary with the following key information parsed from the Vertex AI operation object:
+*   `operation_name`: The name of the operation.
+*   `done` (boolean): True if the operation has finished (successfully or with an error).
+*   `status` (str): Interpreted by `VeoService` as "processing" (if not `done`), "completed" (if `done` and successful), or "failed" (if `done` with an error).
+*   `error` (dict, optional): If the operation failed, this contains error details from the API.
+*   `video_uris` (list, optional): If the operation completed successfully, this is a list of GCS URIs pointing to the generated video(s) (e.g., `["gs://bucket/path/video.mp4"]`). Our application typically uses the first URI from this list to populate the `Video.download_url` field.
 
 **Custom Exceptions:**
 `VeoService` may raise the following custom exceptions (defined in `services/veo_service.py`):
-*   `ConfigurationError`: If `VEO_API_KEY` or `VEO_API_ENDPOINT` are not configured.
-*   `VeoAPIError`: For general errors when interacting with the Veo API (e.g., unexpected status codes, request failures). Contains `status_code` and `error_info` attributes.
-*   `VeoVideoNotFound`: A subclass of `VeoAPIError`, specifically for 404 errors when trying to fetch a video's status.
-The API routes in `api/routes.py` are designed to catch these exceptions and generally translate them into appropriate HTTP error responses (e.g., 500 Internal Server Error for configuration issues, 502 Bad Gateway for API errors, 404 Not Found for video not found on Veo).
+*   `ConfigurationError`: If required GCP configurations are missing.
+*   `VeoAPIError`: For general errors when interacting with the GCP Veo API.
+*   `VeoOperationNotFound`: Specifically for 404 errors when an operation name is not found on GCP.
+The API routes in `api/routes.py` catch these exceptions and translate them into appropriate HTTP error responses.
 
 ## Authentication (`auth/auth.py`)
 
-The API key authentication mechanism (`X-API-KEY` header) for accessing *this application's API* (not the external Veo API) is unchanged.
+The API key authentication mechanism (`X-API-KEY` header) for accessing *this application's API* (not the external Google Cloud Veo API) is unchanged.
 
 ## Running Tests
 
